@@ -1,0 +1,19 @@
+{
+  "name": "markdown-to-csv-converter",
+  "version": "1.0.0",
+  "description": "A simple web application that converts markdown files containing product information to CSV format",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "markdown",
+    "csv",
+    "converter",
+    "web",
+    "app"
+  ],
+  "author": "",
+  "license": "MIT"
+} 

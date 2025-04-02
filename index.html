@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Markdown to CSV Converter</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Markdown to CSV Converter</h1>
+        <div class="upload-container" id="dropZone">
+            <div class="upload-label">
+                <p>Drag and drop your markdown files here</p>
+                <p>or</p>
+                <label for="fileInput" class="upload-button">Select Files</label>
+                <input type="file" id="fileInput" multiple accept=".md" style="display: none;">
+            </div>
+        </div>
+        <div class="file-list" id="fileList">
+            <h3>Selected Files</h3>
+            <ul id="selectedFiles"></ul>
+        </div>
+        <button id="convertButton" class="convert-button" disabled>Convert to CSV</button>
+        <div id="resultContainer" class="result-container" style="display: none;">
+            <h3>Conversion Result</h3>
+            <a id="downloadLink" class="download-button">Download CSV</a>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html> 
