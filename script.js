@@ -354,57 +354,71 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         
-        // Parse the similar builds section which has a consistent format
+        // More flexible approach to finding similar builds
         const lines = content.split(/\r?\n/);
         
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i].trim();
+        // Find all instances of year/make/model followed by wheel info and tire info
+        for (let i = 0; i < lines.length - 2; i++) {
+            const currentLine = lines[i].trim();
             
-            // Look for lines that contain just the year, make, model
-            if (/^[0-9]{4} [A-Za-z]+ [A-Za-z0-9 ]+$/.test(line)) {
-                const vehicleParts = line.split(' ');
-                if (vehicleParts.length >= 3) {
-                    const year = vehicleParts[0];
-                    const make = vehicleParts[1];
-                    // Everything else is the model
-                    const model = vehicleParts.slice(2).join(' ');
+            // Check if this line has a year and make pattern (e.g., "2021 Subaru WRX STI")
+            const yearMakePattern = /^([0-9]{4}) ([A-Za-z]+)(?: ([A-Za-z0-9 ]+))?$/;
+            const vehicleMatch = currentLine.match(yearMakePattern);
+            
+            if (vehicleMatch) {
+                const [, year, make, modelPart] = vehicleMatch;
+                const model = modelPart || "WRX STI"; // Default if model is missing
+                
+                // Look ahead for wheel info, skipping empty lines
+                let wheelLineIndex = i + 1;
+                while (wheelLineIndex < lines.length && lines[wheelLineIndex].trim() === '') {
+                    wheelLineIndex++;
+                }
+                
+                if (wheelLineIndex < lines.length) {
+                    const wheelLine = lines[wheelLineIndex].trim();
+                    const wheelPattern = /^([A-Za-z0-9 -]+) ([0-9.]+x[0-9.]+) ([0-9]+)$/;
+                    const wheelMatch = wheelLine.match(wheelPattern);
                     
-                    // Look for wheel info in the next line - usually something like "Enkei Rs05-rr 18x9.5 35"
-                    if (i+1 < lines.length) {
-                        const wheelLine = lines[i+1].trim();
-                        const wheelMatch = wheelLine.match(/^([A-Za-z0-9 -]+) ([0-9.]+x[0-9.]+) ([0-9]+)$/);
+                    if (wheelMatch) {
+                        const [, wheelBrand, wheelSize, wheelOffset] = wheelMatch;
                         
-                        if (wheelMatch) {
-                            const [, wheelBrand, wheelSize, wheelOffset] = wheelMatch;
+                        // Look ahead for tire info, skipping empty lines
+                        let tireLineIndex = wheelLineIndex + 1;
+                        while (tireLineIndex < lines.length && lines[tireLineIndex].trim() === '') {
+                            tireLineIndex++;
+                        }
+                        
+                        if (tireLineIndex < lines.length) {
+                            const tireLine = lines[tireLineIndex].trim();
+                            // Match patterns like "Brand Name 255x35" or "Brand Name 255/35"
+                            const tirePattern = /^(.+?) (?:([0-9]+)x([0-9]+)|([0-9]{3})\/([0-9]{2}))$/;
+                            const tireMatch = tireLine.match(tirePattern);
                             
-                            // Look for tire info in the next line - usually something like "Michelin Pilot Sport 4 S 255x35"
-                            if (i+2 < lines.length) {
-                                const tireLine = lines[i+2].trim();
-                                // Look for patterns like "Brand Name 255x35" or "Brand Name 255/35"
-                                const tireMatch = tireLine.match(/^([A-Za-z0-9 -\/]+) (?:([0-9]+)x([0-9]+)|([0-9]{3})\/([0-9]{2}))$/);
+                            if (tireMatch) {
+                                let tireBrand, tireSize;
                                 
-                                if (tireMatch) {
-                                    let tireBrand, tireSize;
-                                    
-                                    if (tireMatch[2] && tireMatch[3]) {
-                                        // Format is "Brand 255x35"
-                                        tireBrand = tireMatch[1].trim();
-                                        tireSize = `${tireMatch[2]}x${tireMatch[3]}`;
-                                    } else {
-                                        // Format is "Brand 255/35"
-                                        tireBrand = tireMatch[1].trim();
-                                        tireSize = `${tireMatch[4]}/${tireMatch[5]}`;
-                                    }
-                                    
-                                    // Found a complete vehicle/wheel/tire entry
-                                    results.push({
-                                        year,
-                                        make,
-                                        model,
-                                        wheelInfo: `${wheelBrand} ${wheelSize} +${wheelOffset}`,
-                                        tireInfo: `${tireBrand} ${tireSize}`
-                                    });
+                                if (tireMatch[2] && tireMatch[3]) {
+                                    // Format is "Brand 255x35"
+                                    tireBrand = tireMatch[1].trim();
+                                    tireSize = `${tireMatch[2]}x${tireMatch[3]}`;
+                                } else {
+                                    // Format is "Brand 255/35"
+                                    tireBrand = tireMatch[1].trim();
+                                    tireSize = `${tireMatch[4]}/${tireMatch[5]}`;
                                 }
+                                
+                                // Skip View Car and empty lines, then continue processing
+                                i = tireLineIndex;
+                                
+                                // Found a complete vehicle/wheel/tire entry
+                                results.push({
+                                    year,
+                                    make,
+                                    model,
+                                    wheelInfo: `${wheelBrand} ${wheelSize} +${wheelOffset}`,
+                                    tireInfo: `${tireBrand} ${tireSize}`
+                                });
                             }
                         }
                     }
