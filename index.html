@@ -9,6 +9,16 @@
 <body>
     <div class="container">
         <h1>Markdown to CSV Converter</h1>
+        
+        <div class="converter-toggle">
+            <label>
+                <input type="radio" name="converterType" value="product" checked> Product Converter
+            </label>
+            <label>
+                <input type="radio" name="converterType" value="gallery"> Gallery Converter
+            </label>
+        </div>
+        
         <div class="upload-container" id="dropZone">
             <div class="upload-label">
                 <p>Drag and drop your markdown files here</p>

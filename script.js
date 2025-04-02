@@ -5,9 +5,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const convertButton = document.getElementById('convertButton');
     const resultContainer = document.getElementById('resultContainer');
     const downloadLink = document.getElementById('downloadLink');
+    const converterTypeRadios = document.querySelectorAll('input[name="converterType"]');
     
     // Files storage
     let files = [];
+    let converterType = 'product'; // Default to product converter
+    
+    // Setup converter type toggle
+    converterTypeRadios.forEach(radio => {
+        radio.addEventListener('change', function() {
+            converterType = this.value;
+        });
+    });
     
     // Setup drag and drop events
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
@@ -102,18 +111,28 @@ document.addEventListener('DOMContentLoaded', () => {
     convertButton.addEventListener('click', async function() {
         if (files.length === 0) return;
         
-        // Process each file
+        // Process each file based on converter type
         try {
-            const processedData = await Promise.all(files.map(processFile));
+            let processedData;
+            let csvData;
+            let filename;
             
-            // Generate CSV
-            const csv = generateCSV(processedData);
+            if (converterType === 'product') {
+                processedData = await Promise.all(files.map(processProductFile));
+                csvData = generateProductCSV(processedData);
+                filename = 'products.csv';
+            } else {
+                // Gallery converter
+                processedData = await Promise.all(files.map(processGalleryFile));
+                csvData = generateGalleryCSV(processedData);
+                filename = 'vehicle_fitments.csv';
+            }
             
             // Create download link
-            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             downloadLink.setAttribute('href', url);
-            downloadLink.setAttribute('download', 'products.csv');
+            downloadLink.setAttribute('download', filename);
             
             // Show result container
             resultContainer.style.display = 'block';
@@ -123,14 +142,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     
-    async function processFile(file) {
+    async function processProductFile(file) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             
             reader.onload = function(e) {
                 try {
                     const content = e.target.result;
-                    const parsed = parseMarkdown(content);
+                    const parsed = parseProductMarkdown(content);
                     resolve(parsed);
                 } catch (error) {
                     reject(error);
@@ -145,7 +164,29 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
-    function parseMarkdown(content) {
+    async function processGalleryFile(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                try {
+                    const content = e.target.result;
+                    const parsed = parseGalleryMarkdown(content);
+                    resolve(parsed);
+                } catch (error) {
+                    reject(error);
+                }
+            };
+            
+            reader.onerror = function() {
+                reject(new Error(`Error reading file ${file.name}`));
+            };
+            
+            reader.readAsText(file);
+        });
+    }
+    
+    function parseProductMarkdown(content) {
         const data = {
             productTitle: '',
             productCode: '',
@@ -286,7 +327,95 @@ document.addEventListener('DOMContentLoaded', () => {
         return data;
     }
     
-    function generateCSV(data) {
+    function parseGalleryMarkdown(content) {
+        const results = [];
+        
+        // First, look for the main vehicle title in the format "# 2021 Subaru WRX STI Base AVID1 AV20 18x9.5 +38 | Michelin ..."
+        const mainVehicleMatch = content.match(/# ([0-9]{4}) ([A-Za-z]+) ([A-Za-z0-9 ]+)(?:\s+Base|\s+Limited)?\s+([A-Za-z0-9]+) ([A-Za-z0-9]+) ([0-9.]+x[0-9.]+) \+([0-9]+)/);
+        
+        if (mainVehicleMatch) {
+            const [, year, make, model, wheelBrand1, wheelBrand2, wheelSize, wheelOffset] = mainVehicleMatch;
+            const wheelBrand = wheelBrand1 + ' ' + wheelBrand2;
+            
+            // Look for tire info
+            const mainTireMatch = content.match(/\| ([A-Za-z]+) ([A-Za-z 0-9/-]+) ([0-9]{3}\/[0-9]{2})/);
+            
+            if (mainTireMatch) {
+                const [, tireBrand1, tireBrand2, tireSize] = mainTireMatch;
+                const tireBrand = (tireBrand1 + ' ' + tireBrand2).trim();
+                
+                results.push({
+                    year,
+                    make,
+                    model,
+                    wheelInfo: `${wheelBrand} ${wheelSize} +${wheelOffset}`,
+                    tireInfo: `${tireBrand} ${tireSize}`
+                });
+            }
+        }
+        
+        // Parse the similar builds section which has a consistent format
+        const lines = content.split(/\r?\n/);
+        
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            
+            // Look for lines that contain just the year, make, model
+            if (/^[0-9]{4} [A-Za-z]+ [A-Za-z0-9 ]+$/.test(line)) {
+                const vehicleParts = line.split(' ');
+                if (vehicleParts.length >= 3) {
+                    const year = vehicleParts[0];
+                    const make = vehicleParts[1];
+                    // Everything else is the model
+                    const model = vehicleParts.slice(2).join(' ');
+                    
+                    // Look for wheel info in the next line - usually something like "Enkei Rs05-rr 18x9.5 35"
+                    if (i+1 < lines.length) {
+                        const wheelLine = lines[i+1].trim();
+                        const wheelMatch = wheelLine.match(/^([A-Za-z0-9 -]+) ([0-9.]+x[0-9.]+) ([0-9]+)$/);
+                        
+                        if (wheelMatch) {
+                            const [, wheelBrand, wheelSize, wheelOffset] = wheelMatch;
+                            
+                            // Look for tire info in the next line - usually something like "Michelin Pilot Sport 4 S 255x35"
+                            if (i+2 < lines.length) {
+                                const tireLine = lines[i+2].trim();
+                                // Look for patterns like "Brand Name 255x35" or "Brand Name 255/35"
+                                const tireMatch = tireLine.match(/^([A-Za-z0-9 -\/]+) (?:([0-9]+)x([0-9]+)|([0-9]{3})\/([0-9]{2}))$/);
+                                
+                                if (tireMatch) {
+                                    let tireBrand, tireSize;
+                                    
+                                    if (tireMatch[2] && tireMatch[3]) {
+                                        // Format is "Brand 255x35"
+                                        tireBrand = tireMatch[1].trim();
+                                        tireSize = `${tireMatch[2]}x${tireMatch[3]}`;
+                                    } else {
+                                        // Format is "Brand 255/35"
+                                        tireBrand = tireMatch[1].trim();
+                                        tireSize = `${tireMatch[4]}/${tireMatch[5]}`;
+                                    }
+                                    
+                                    // Found a complete vehicle/wheel/tire entry
+                                    results.push({
+                                        year,
+                                        make,
+                                        model,
+                                        wheelInfo: `${wheelBrand} ${wheelSize} +${wheelOffset}`,
+                                        tireInfo: `${tireBrand} ${tireSize}`
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        return results;
+    }
+    
+    function generateProductCSV(data) {
         // Determine the maximum number of media URLs
         let maxMediaCount = 0;
         data.forEach(item => {
@@ -318,6 +447,32 @@ document.addEventListener('DOMContentLoaded', () => {
             for (let i = 0; i < maxMediaCount; i++) {
                 row.push(i < item.mediaUrls.length ? escapeCsvField(item.mediaUrls[i]) : '');
             }
+            
+            csvContent += row.join(',') + '\n';
+        });
+        
+        return csvContent;
+    }
+    
+    function generateGalleryCSV(data) {
+        // Flatten the array of arrays into a single array of objects
+        const flatData = data.flat();
+        
+        // Create header row
+        const headers = ['Year', 'Make', 'Model', 'Wheel Info', 'Tire Info'];
+        
+        // Create CSV content
+        let csvContent = headers.join(',') + '\n';
+        
+        // Add data rows
+        flatData.forEach(item => {
+            const row = [
+                escapeCsvField(item.year),
+                escapeCsvField(item.make),
+                escapeCsvField(item.model),
+                escapeCsvField(item.wheelInfo),
+                escapeCsvField(item.tireInfo)
+            ];
             
             csvContent += row.join(',') + '\n';
         });
