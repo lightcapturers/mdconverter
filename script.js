@@ -121,11 +121,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 processedData = await Promise.all(files.map(processProductFile));
                 csvData = generateProductCSV(processedData);
                 filename = 'products.csv';
-            } else {
+            } else if (converterType === 'gallery') {
                 // Gallery converter
                 processedData = await Promise.all(files.map(processGalleryFile));
                 csvData = generateGalleryCSV(processedData);
                 filename = 'vehicle_fitments.csv';
+            } else if (converterType === 'boltpattern') {
+                // Bolt pattern converter
+                processedData = await Promise.all(files.map(processBoltPatternFile));
+                csvData = generateBoltPatternCSV(processedData);
+                filename = 'bolt_patterns.csv';
+            } else if (converterType === 'carguide') {
+                // Car guide converter
+                processedData = await Promise.all(files.map(processCarGuideFile));
+                csvData = generateCarGuideCSV(processedData);
+                filename = 'car_fitment_guides.csv';
             }
             
             // Create download link
@@ -172,6 +182,50 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     const content = e.target.result;
                     const parsed = parseGalleryMarkdown(content);
+                    resolve(parsed);
+                } catch (error) {
+                    reject(error);
+                }
+            };
+            
+            reader.onerror = function() {
+                reject(new Error(`Error reading file ${file.name}`));
+            };
+            
+            reader.readAsText(file);
+        });
+    }
+    
+    async function processBoltPatternFile(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                try {
+                    const content = e.target.result;
+                    const parsed = parseBoltPatternMarkdown(content);
+                    resolve(parsed);
+                } catch (error) {
+                    reject(error);
+                }
+            };
+            
+            reader.onerror = function() {
+                reject(new Error(`Error reading file ${file.name}`));
+            };
+            
+            reader.readAsText(file);
+        });
+    }
+    
+    async function processCarGuideFile(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                try {
+                    const content = e.target.result;
+                    const parsed = parseCarGuideMarkdown(content);
                     resolve(parsed);
                 } catch (error) {
                     reject(error);
@@ -330,95 +384,150 @@ document.addEventListener('DOMContentLoaded', () => {
     function parseGalleryMarkdown(content) {
         const results = [];
         
-        // First, look for the main vehicle title in the format "# 2021 Subaru WRX STI Base AVID1 AV20 18x9.5 +38 | Michelin ..."
-        const mainVehicleMatch = content.match(/# ([0-9]{4}) ([A-Za-z]+) ([A-Za-z0-9 ]+)(?:\s+Base|\s+Limited)?\s+([A-Za-z0-9]+) ([A-Za-z0-9]+) ([0-9.]+x[0-9.]+) \+([0-9]+)/);
+        // Check for existing patterns first
+        processMainVehiclePatterns(content, results);
         
-        if (mainVehicleMatch) {
-            const [, year, make, model, wheelBrand1, wheelBrand2, wheelSize, wheelOffset] = mainVehicleMatch;
-            const wheelBrand = wheelBrand1 + ' ' + wheelBrand2;
-            
-            // Look for tire info
-            const mainTireMatch = content.match(/\| ([A-Za-z]+) ([A-Za-z 0-9/-]+) ([0-9]{3}\/[0-9]{2})/);
-            
-            if (mainTireMatch) {
-                const [, tireBrand1, tireBrand2, tireSize] = mainTireMatch;
-                const tireBrand = (tireBrand1 + ' ' + tireBrand2).trim();
-                
-                results.push({
-                    year,
-                    make,
-                    model,
-                    wheelInfo: `${wheelBrand} ${wheelSize} +${wheelOffset}`,
-                    tireInfo: `${tireBrand} ${tireSize}`
-                });
-            }
-        }
+        // New pattern for gallery overview format
+        processGalleryOverviewFormat(content, results);
         
-        // More flexible approach to finding similar builds
-        const lines = content.split(/\r?\n/);
+        return results;
         
-        // Find all instances of year/make/model followed by wheel info and tire info
-        for (let i = 0; i < lines.length - 2; i++) {
-            const currentLine = lines[i].trim();
+        // Function to process the main vehicle patterns we already support
+        function processMainVehiclePatterns(content, results) {
+            // First, check for the pattern with different front/rear wheel and tire setup
+            // Format: "# 2025 Ferrari SF90 XX Stradale Base Ferrada F8-fr12 Front: 20x9 +20 Rear: 20x12 +20 | Nitto..."
+            const staggeredSetupMatch = content.match(/# ([0-9]{4}) ([A-Za-z]+) ([A-Za-z0-9 -]+)(?:\s+Base|\s+Limited)?\s+([A-Za-z0-9 -]+) Front: ([0-9.]+x[0-9.]+) \+([0-9]+) Rear: ([0-9.]+x[0-9.]+) \+([0-9]+)/i);
             
-            // Check if this line has a year and make pattern (e.g., "2021 Subaru WRX STI")
-            const yearMakePattern = /^([0-9]{4}) ([A-Za-z]+)(?: ([A-Za-z0-9 ]+))?$/;
-            const vehicleMatch = currentLine.match(yearMakePattern);
-            
-            if (vehicleMatch) {
-                const [, year, make, modelPart] = vehicleMatch;
-                const model = modelPart || "WRX STI"; // Default if model is missing
+            if (staggeredSetupMatch) {
+                const [, year, make, model, wheelBrand, frontWheelSize, frontOffset, rearWheelSize, rearOffset] = staggeredSetupMatch;
                 
-                // Look ahead for wheel info, skipping empty lines
-                let wheelLineIndex = i + 1;
-                while (wheelLineIndex < lines.length && lines[wheelLineIndex].trim() === '') {
-                    wheelLineIndex++;
-                }
+                // Look for staggered tire info
+                const staggeredTireMatch = content.match(/\| ([A-Za-z0-9 -]+) Front: ([0-9]{3}\/[0-9]{2}) Rear: ([0-9]{3}\/[0-9]{2})/i);
                 
-                if (wheelLineIndex < lines.length) {
-                    const wheelLine = lines[wheelLineIndex].trim();
-                    const wheelPattern = /^([A-Za-z0-9 -]+) ([0-9.]+x[0-9.]+) ([0-9]+)$/;
-                    const wheelMatch = wheelLine.match(wheelPattern);
+                if (staggeredTireMatch) {
+                    const [, tireBrand, frontTireSize, rearTireSize] = staggeredTireMatch;
                     
-                    if (wheelMatch) {
-                        const [, wheelBrand, wheelSize, wheelOffset] = wheelMatch;
+                    results.push({
+                        year,
+                        make,
+                        model,
+                        hasStaggeredSetup: true,
+                        frontWheelBrand: wheelBrand.trim(),
+                        frontWheelSpecs: `${frontWheelSize} +${frontOffset}`,
+                        rearWheelBrand: wheelBrand.trim(),
+                        rearWheelSpecs: `${rearWheelSize} +${rearOffset}`,
+                        frontTireBrand: tireBrand.trim(),
+                        frontTireSize: standardizeTireSize(frontTireSize),
+                        rearTireBrand: tireBrand.trim(),
+                        rearTireSize: standardizeTireSize(rearTireSize)
+                    });
+                }
+            } else {
+                // Try the regular single wheel setup pattern
+                const mainVehicleMatch = content.match(/# ([0-9]{4}) ([A-Za-z]+) ([A-Za-z0-9 ]+)(?:\s+Base|\s+Limited)?\s+([A-Za-z0-9]+) ([A-Za-z0-9]+) ([0-9.]+x[0-9.]+) \+([0-9]+)/);
+                
+                if (mainVehicleMatch) {
+                    const [, year, make, model, wheelBrand1, wheelBrand2, wheelSize, wheelOffset] = mainVehicleMatch;
+                    const wheelBrand = wheelBrand1 + ' ' + wheelBrand2;
+                    
+                    // Look for tire info
+                    const mainTireMatch = content.match(/\| ([A-Za-z]+) ([A-Za-z 0-9/-]+) ([0-9]{3}\/[0-9]{2})/);
+                    
+                    if (mainTireMatch) {
+                        const [, tireBrand1, tireBrand2, tireSize] = mainTireMatch;
+                        const tireBrand = (tireBrand1 + ' ' + tireBrand2).trim();
                         
-                        // Look ahead for tire info, skipping empty lines
-                        let tireLineIndex = wheelLineIndex + 1;
-                        while (tireLineIndex < lines.length && lines[tireLineIndex].trim() === '') {
-                            tireLineIndex++;
-                        }
+                        results.push({
+                            year,
+                            make,
+                            model,
+                            hasStaggeredSetup: false,
+                            frontWheelBrand: wheelBrand.trim(),
+                            frontWheelSpecs: `${wheelSize} +${wheelOffset}`,
+                            rearWheelBrand: wheelBrand.trim(),
+                            rearWheelSpecs: `${wheelSize} +${wheelOffset}`,
+                            frontTireBrand: tireBrand.trim(),
+                            frontTireSize: standardizeTireSize(tireSize),
+                            rearTireBrand: tireBrand.trim(),
+                            rearTireSize: standardizeTireSize(tireSize)
+                        });
+                    }
+                }
+            }
+            
+            // Parse the similar builds section
+            const lines = content.split(/\r?\n/);
+            
+            // Find all instances of year/make/model followed by wheel info and tire info
+            for (let i = 0; i < lines.length - 2; i++) {
+                const currentLine = lines[i].trim();
+                
+                // Check if this line has a year and make pattern (e.g., "2021 Subaru WRX STI")
+                const yearMakePattern = /^([0-9]{4}) ([A-Za-z]+)(?: ([A-Za-z0-9 -]+))?$/;
+                const vehicleMatch = currentLine.match(yearMakePattern);
+                
+                if (vehicleMatch) {
+                    const [, year, make, modelPart] = vehicleMatch;
+                    const model = modelPart || ""; // Default if model is missing
+                    
+                    // Look ahead for wheel info, skipping empty lines
+                    let wheelLineIndex = i + 1;
+                    while (wheelLineIndex < lines.length && lines[wheelLineIndex].trim() === '') {
+                        wheelLineIndex++;
+                    }
+                    
+                    if (wheelLineIndex < lines.length) {
+                        const wheelLine = lines[wheelLineIndex].trim();
+                        const wheelPattern = /^([A-Za-z0-9 -]+) ([0-9.]+x[0-9.]+) ([0-9]+)$/;
+                        const wheelMatch = wheelLine.match(wheelPattern);
                         
-                        if (tireLineIndex < lines.length) {
-                            const tireLine = lines[tireLineIndex].trim();
-                            // Match patterns like "Brand Name 255x35" or "Brand Name 255/35"
-                            const tirePattern = /^(.+?) (?:([0-9]+)x([0-9]+)|([0-9]{3})\/([0-9]{2}))$/;
-                            const tireMatch = tireLine.match(tirePattern);
+                        if (wheelMatch) {
+                            const [, wheelBrand, wheelSize, wheelOffset] = wheelMatch;
                             
-                            if (tireMatch) {
-                                let tireBrand, tireSize;
+                            // Look ahead for tire info, skipping empty lines
+                            let tireLineIndex = wheelLineIndex + 1;
+                            while (tireLineIndex < lines.length && lines[tireLineIndex].trim() === '') {
+                                tireLineIndex++;
+                            }
+                            
+                            if (tireLineIndex < lines.length) {
+                                const tireLine = lines[tireLineIndex].trim();
+                                // Match patterns like "Brand Name 255x35" or "Brand Name 255/35"
+                                const tirePattern = /^(.+?) (?:([0-9]+)x([0-9]+)|([0-9]{3})\/([0-9]{2}))$/;
+                                const tireMatch = tireLine.match(tirePattern);
                                 
-                                if (tireMatch[2] && tireMatch[3]) {
-                                    // Format is "Brand 255x35"
-                                    tireBrand = tireMatch[1].trim();
-                                    tireSize = `${tireMatch[2]}x${tireMatch[3]}`;
-                                } else {
-                                    // Format is "Brand 255/35"
-                                    tireBrand = tireMatch[1].trim();
-                                    tireSize = `${tireMatch[4]}/${tireMatch[5]}`;
+                                if (tireMatch) {
+                                    let tireBrand, tireSize;
+                                    
+                                    if (tireMatch[2] && tireMatch[3]) {
+                                        // Format is "Brand 255x35"
+                                        tireBrand = tireMatch[1].trim();
+                                        tireSize = `${tireMatch[2]}/${tireMatch[3]}`;  // Convert to slash format
+                                    } else {
+                                        // Format is "Brand 255/35"
+                                        tireBrand = tireMatch[1].trim();
+                                        tireSize = `${tireMatch[4]}/${tireMatch[5]}`;
+                                    }
+                                    
+                                    // Skip View Car and empty lines, then continue processing
+                                    i = tireLineIndex;
+                                    
+                                    // Found a complete vehicle/wheel/tire entry
+                                    results.push({
+                                        year,
+                                        make,
+                                        model,
+                                        hasStaggeredSetup: false,
+                                        frontWheelBrand: wheelBrand.trim(),
+                                        frontWheelSpecs: `${wheelSize} +${wheelOffset}`,
+                                        rearWheelBrand: wheelBrand.trim(),
+                                        rearWheelSpecs: `${wheelSize} +${wheelOffset}`,
+                                        frontTireBrand: tireBrand,
+                                        frontTireSize: standardizeTireSize(tireSize),
+                                        rearTireBrand: tireBrand,
+                                        rearTireSize: standardizeTireSize(tireSize)
+                                    });
                                 }
-                                
-                                // Skip View Car and empty lines, then continue processing
-                                i = tireLineIndex;
-                                
-                                // Found a complete vehicle/wheel/tire entry
-                                results.push({
-                                    year,
-                                    make,
-                                    model,
-                                    wheelInfo: `${wheelBrand} ${wheelSize} +${wheelOffset}`,
-                                    tireInfo: `${tireBrand} ${tireSize}`
-                                });
                             }
                         }
                     }
@@ -426,7 +535,323 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         
+        // Function to process the new gallery overview format
+        function processGalleryOverviewFormat(content, results) {
+            const lines = content.split(/\r?\n/);
+            
+            // Look for patterns like "**2025 Ferrari SF90 XX Stradale Base — Staggered**"
+            // followed by wheel and tire info
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+                
+                // Match year, make, model and check if staggered
+                const vehicleHeaderMatch = line.match(/\*\*([0-9]{4}) ([A-Za-z]+)\s+([^*]+?)(?:\s+—\s+Staggered)?\*\*/);
+                
+                if (vehicleHeaderMatch) {
+                    const [, year, make, modelRaw] = vehicleHeaderMatch;
+                    const model = modelRaw.trim();
+                    const isStaggered = line.includes('Staggered');
+                    
+                    // Skip lines until we find the wheel info
+                    let wheelInfoFound = false;
+                    let wheelBrand = '';
+                    let frontWheelSize = '';
+                    let frontOffset = '';
+                    let rearWheelSize = '';
+                    let rearOffset = '';
+                    
+                    // Look ahead for wheel info within the next 10 lines
+                    for (let j = i + 1; j < Math.min(i + 10, lines.length) && !wheelInfoFound; j++) {
+                        const wheelLine = lines[j].trim();
+                        
+                        // Look for wheel brand and specs - handle both staggered and non-staggered
+                        if (wheelLine.includes('**') && (wheelLine.includes('mm') || wheelLine.includes('x'))) {
+                            // First, try to match staggered wheel pattern
+                            const staggeredWheelMatch = wheelLine.match(/\*\*([^*]+)\*\* \*\*([0-9.]+x[0-9.]+) ([0-9]+)mm — Rear: ([0-9.]+x[0-9.]+) ([0-9]+)mm\*\*/);
+                            
+                            if (staggeredWheelMatch) {
+                                // Staggered wheel setup
+                                [, wheelBrand, frontWheelSize, frontOffset, rearWheelSize, rearOffset] = staggeredWheelMatch;
+                                wheelInfoFound = true;
+                            } else {
+                                // Try non-staggered wheel pattern
+                                const wheelMatch = wheelLine.match(/\*\*([^*]+)\*\* \*\*([0-9.]+x[0-9.]+) ([0-9]+)mm\*\*/);
+                                
+                                if (wheelMatch) {
+                                    [, wheelBrand, frontWheelSize, frontOffset] = wheelMatch;
+                                    rearWheelSize = frontWheelSize;
+                                    rearOffset = frontOffset;
+                                    wheelInfoFound = true;
+                                }
+                            }
+                            
+                            // If wheel info found, look for tire info
+                            if (wheelInfoFound) {
+                                let tireInfoFound = false;
+                                let tireBrand = '';
+                                let frontTireSize = '';
+                                let rearTireSize = '';
+                                
+                                // Look ahead for tire info within the next 5 lines
+                                for (let k = j + 1; k < Math.min(j + 5, lines.length) && !tireInfoFound; k++) {
+                                    const tireLine = lines[k].trim();
+                                    
+                                    if (tireLine.includes('**') && (tireLine.includes('R') || tireLine.includes('/'))) {
+                                        // Try to match staggered tire pattern
+                                        const staggeredTireMatch = tireLine.match(/\*\*([^*]+)\*\*\*\*(?:Front: )?([0-9]{3}\/[0-9]{2}R[0-9]+) — Rear: ([0-9]{3}\/[0-9]{2}R[0-9]+)\*\*/);
+                                        
+                                        if (staggeredTireMatch) {
+                                            // Staggered tire setup
+                                            [, tireBrand, frontTireSize, rearTireSize] = staggeredTireMatch;
+                                            tireInfoFound = true;
+                                        } else {
+                                            // Try non-staggered tire pattern
+                                            const tireMatch = tireLine.match(/\*\*([^*]+)\*\*\*\*([0-9]{3}\/[0-9]{2}R[0-9]+)\*\*/);
+                                            
+                                            if (tireMatch) {
+                                                [, tireBrand, frontTireSize] = tireMatch;
+                                                rearTireSize = frontTireSize;
+                                                tireInfoFound = true;
+                                            }
+                                        }
+                                        
+                                        // If tire info found, add result
+                                        if (tireInfoFound) {
+                                            // Clean and standardize formats
+                                            frontTireSize = standardizeTireSize(extractTireSize(frontTireSize));
+                                            rearTireSize = standardizeTireSize(extractTireSize(rearTireSize || frontTireSize));
+                                            
+                                            results.push({
+                                                year,
+                                                make,
+                                                model,
+                                                hasStaggeredSetup: isStaggered || frontWheelSize !== rearWheelSize || frontOffset !== rearOffset || frontTireSize !== rearTireSize,
+                                                frontWheelBrand: wheelBrand.trim(),
+                                                frontWheelSpecs: `${frontWheelSize} +${frontOffset}`,
+                                                rearWheelBrand: wheelBrand.trim(),
+                                                rearWheelSpecs: `${rearWheelSize} +${rearOffset}`,
+                                                frontTireBrand: tireBrand.trim(),
+                                                frontTireSize: frontTireSize,
+                                                rearTireBrand: tireBrand.trim(),
+                                                rearTireSize: rearTireSize
+                                            });
+                                            
+                                            // Skip to end of this vehicle entry
+                                            i = k;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Helper function to standardize tire size format to use slash
+        function standardizeTireSize(size) {
+            // Convert format like "255x35" to "255/35"
+            return size.replace(/([0-9]+)x([0-9]+)/, '$1/$2');
+        }
+        
+        // Helper function to extract tire size from format like "255/35R20"
+        function extractTireSize(fullSize) {
+            const match = fullSize.match(/([0-9]{3}\/[0-9]{2})/);
+            return match ? match[1] : fullSize;
+        }
+    }
+    
+    function parseBoltPatternMarkdown(content) {
+        const results = [];
+        
+        // Split content into lines
+        const lines = content.split(/\r?\n/);
+        
+        // Find the table rows
+        let tableFound = false;
+        
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            
+            // Look for the header row that contains "Year/Make/Model/Option" and "Bolt Patterns"
+            if (line.includes('**Year/Make/Model/Option**') && line.includes('**Bolt Patterns**')) {
+                tableFound = true;
+                continue;
+            }
+            
+            // Skip divider row with | --- | --- |
+            if (tableFound && line.match(/^\|[\s-]*\|[\s-]*\|$/)) {
+                continue;
+            }
+            
+            // Process data rows after header is found
+            if (tableFound && line.startsWith('|') && line.endsWith('|')) {
+                // Extract cells
+                const cells = line.split('|').map(cell => cell.trim()).filter(cell => cell !== '');
+                
+                if (cells.length >= 2) {
+                    // Extract vehicle info from first cell
+                    // Format: [2000 Ford Focus LX Sedan](http://...)
+                    const vehicleMatch = cells[0].match(/\[([0-9]{4}) ([A-Za-z]+) ([A-Za-z0-9 ]+) ([A-Za-z0-9 .]+)\]/);
+                    
+                    if (vehicleMatch) {
+                        const [, year, make, model, option] = vehicleMatch;
+                        
+                        // Extract bolt pattern from second cell
+                        const boltPattern = cells[1].replace(/\(.*?\)/g, '').trim();
+                        
+                        results.push({
+                            year,
+                            make,
+                            model,
+                            option,
+                            boltPattern
+                        });
+                    }
+                }
+            }
+        }
+        
         return results;
+    }
+    
+    function parseCarGuideMarkdown(content) {
+        const results = [];
+        
+        // Split content into lines
+        const lines = content.split(/\r?\n/);
+        
+        // Extract the guide title and car information
+        let carMake = '';
+        let carModel = '';
+        let carGeneration = '';
+        let modelYears = [];
+        
+        // Look for title that contains car make and model
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (line.startsWith('# ')) {
+                // Extract make and model from title like "# Audi B8 S5 Wheel & Tire Fitment Guide"
+                const titleMatch = line.match(/# ([A-Za-z]+) ([A-Za-z0-9]+) ([A-Za-z0-9]+)/);
+                if (titleMatch) {
+                    [, carMake, carGeneration, carModel] = titleMatch;
+                    break;
+                }
+            }
+        }
+        
+        // Look for model years covered in the guide
+        const modelsPattern = /\*\*Models Covered in This Guide\*\*\s+\*\*([0-9-]+) ([A-Za-z]+) ([A-Za-z0-9]+)/g;
+        let modelsMatch;
+        
+        while ((modelsMatch = modelsPattern.exec(content)) !== null) {
+            const yearRange = modelsMatch[1];
+            const yearRangeMatch = yearRange.match(/([0-9]{4})-([0-9]{4})/);
+            if (yearRangeMatch) {
+                const startYear = parseInt(yearRangeMatch[1]);
+                const endYear = parseInt(yearRangeMatch[2]);
+                for (let year = startYear; year <= endYear; year++) {
+                    modelYears.push(year);
+                }
+            }
+        }
+        
+        // Process OEM+ section
+        const oemPlusSection = extractSection(content, "OEM\\+ Wheel Fitment", "Performance Street and Track");
+        if (oemPlusSection) {
+            const oemPlusRecommendations = extractRecommendations(oemPlusSection, "OEM+");
+            oemPlusRecommendations.forEach(rec => {
+                modelYears.forEach(year => {
+                    results.push({
+                        year,
+                        make: carMake,
+                        model: carModel,
+                        generation: carGeneration,
+                        recommendationType: rec.type,
+                        recommendationIndex: rec.index,
+                        wheelSpec: rec.wheelSpec,
+                        tireSpec: rec.tireSpec,
+                        notes: rec.notes,
+                        orientation: rec.orientation
+                    });
+                });
+            });
+        }
+        
+        // Process Performance section
+        const performanceSection = extractSection(content, "Performance Street and Track Wheel Fitment", "Additional Resources");
+        if (performanceSection) {
+            const performanceRecommendations = extractRecommendations(performanceSection, "Performance");
+            performanceRecommendations.forEach(rec => {
+                modelYears.forEach(year => {
+                    results.push({
+                        year,
+                        make: carMake,
+                        model: carModel,
+                        generation: carGeneration,
+                        recommendationType: rec.type,
+                        recommendationIndex: rec.index,
+                        wheelSpec: rec.wheelSpec,
+                        tireSpec: rec.tireSpec,
+                        notes: rec.notes,
+                        orientation: rec.orientation
+                    });
+                });
+            });
+        }
+        
+        return results;
+        
+        function extractSection(content, sectionStart, sectionEnd) {
+            const sectionRegex = new RegExp(`## ${sectionStart}[\\s\\S]*?(?:## ${sectionEnd}|$)`, 'i');
+            const match = content.match(sectionRegex);
+            return match ? match[0] : '';
+        }
+        
+        function extractRecommendations(sectionContent, recommendationType) {
+            const recommendations = [];
+            
+            // Split into individual recommendations
+            const recLines = sectionContent.split(/\*\*Front & Rear:/);
+            
+            // Skip the first element which is usually the section heading
+            for (let i = 1; i < recLines.length; i++) {
+                const recContent = recLines[i];
+                
+                // Extract wheel spec
+                const wheelSpecMatch = recContent.match(/([0-9.]+x[0-9.]+["']) (?:ET)?([0-9]+)/i);
+                
+                if (wheelSpecMatch) {
+                    const wheelSize = wheelSpecMatch[1];
+                    const wheelOffset = wheelSpecMatch[2];
+                    const wheelSpec = `${wheelSize} ET${wheelOffset}`;
+                    
+                    // Extract tire spec
+                    const tireSpecMatch = recContent.match(/([0-9]{3}\/[0-9]{2}-[0-9]{2})/);
+                    const tireSpec = tireSpecMatch ? tireSpecMatch[1] : '';
+                    
+                    // Extract orientation (Square by default since it says Front & Rear)
+                    const orientation = "Square";
+                    
+                    // Extract additional notes
+                    const notesMatch = recContent.match(/(-\s+.*?)(?:\*\*|$)/s);
+                    const notes = notesMatch ? notesMatch[1].replace(/\n/g, ' ').replace(/-\s+/, '').trim() : '';
+                    
+                    // Add to recommendations with an index to keep track of multiple recommendations of the same type
+                    recommendations.push({
+                        type: recommendationType,
+                        index: recommendations.filter(r => r.type === recommendationType).length + 1,
+                        wheelSpec,
+                        tireSpec,
+                        notes,
+                        orientation
+                    });
+                }
+            }
+            
+            return recommendations;
+        }
     }
     
     function generateProductCSV(data) {
@@ -472,8 +897,56 @@ document.addEventListener('DOMContentLoaded', () => {
         // Flatten the array of arrays into a single array of objects
         const flatData = data.flat();
         
+        // Create header row with separate columns
+        const headers = [
+            'Year', 'Make', 'Model', 'Orientation', 
+            'Front Wheel Brand', 'Front Wheel Specs', 
+            'Rear Wheel Brand', 'Rear Wheel Specs', 
+            'Front Tire Brand', 'Front Tire Size', 
+            'Rear Tire Brand', 'Rear Tire Size'
+        ];
+        
+        // Create CSV content
+        let csvContent = headers.join(',') + '\n';
+        
+        // Add data rows
+        flatData.forEach(item => {
+            // Determine orientation based on wheel and tire info
+            let orientation = "Square";
+            if (
+                item.frontWheelSpecs !== item.rearWheelSpecs || 
+                item.frontTireSize !== item.rearTireSize
+            ) {
+                orientation = "Staggered";
+            }
+            
+            const row = [
+                escapeCsvField(item.year),
+                escapeCsvField(item.make),
+                escapeCsvField(item.model),
+                escapeCsvField(orientation),
+                escapeCsvField(item.frontWheelBrand || ''),
+                escapeCsvField(item.frontWheelSpecs || ''),
+                escapeCsvField(item.rearWheelBrand || ''),
+                escapeCsvField(item.rearWheelSpecs || ''),
+                escapeCsvField(item.frontTireBrand || ''),
+                escapeCsvField(item.frontTireSize || ''),
+                escapeCsvField(item.rearTireBrand || ''),
+                escapeCsvField(item.rearTireSize || '')
+            ];
+            
+            csvContent += row.join(',') + '\n';
+        });
+        
+        return csvContent;
+    }
+    
+    function generateBoltPatternCSV(data) {
+        // Flatten the array of arrays into a single array of objects
+        const flatData = data.flat();
+        
         // Create header row
-        const headers = ['Year', 'Make', 'Model', 'Wheel Info', 'Tire Info'];
+        const headers = ['Year', 'Make', 'Model', 'Option', 'Bolt Pattern'];
         
         // Create CSV content
         let csvContent = headers.join(',') + '\n';
@@ -484,8 +957,44 @@ document.addEventListener('DOMContentLoaded', () => {
                 escapeCsvField(item.year),
                 escapeCsvField(item.make),
                 escapeCsvField(item.model),
-                escapeCsvField(item.wheelInfo),
-                escapeCsvField(item.tireInfo)
+                escapeCsvField(item.option),
+                escapeCsvField(item.boltPattern)
+            ];
+            
+            csvContent += row.join(',') + '\n';
+        });
+        
+        return csvContent;
+    }
+    
+    function generateCarGuideCSV(data) {
+        // Flatten the array of arrays into a single array of objects
+        const flatData = data.flat();
+        
+        // Create header row
+        const headers = [
+            'Year', 'Make', 'Model', 'Generation', 
+            'Recommendation Type', 'Index', 
+            'Wheel Specification', 'Tire Specification', 
+            'Orientation', 'Notes'
+        ];
+        
+        // Create CSV content
+        let csvContent = headers.join(',') + '\n';
+        
+        // Add data rows
+        flatData.forEach(item => {
+            const row = [
+                escapeCsvField(item.year),
+                escapeCsvField(item.make),
+                escapeCsvField(item.model),
+                escapeCsvField(item.generation),
+                escapeCsvField(item.recommendationType),
+                escapeCsvField(item.recommendationIndex),
+                escapeCsvField(item.wheelSpec),
+                escapeCsvField(item.tireSpec),
+                escapeCsvField(item.orientation),
+                escapeCsvField(item.notes)
             ];
             
             csvContent += row.join(',') + '\n';
