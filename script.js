@@ -136,6 +136,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 processedData = await Promise.all(files.map(processCarGuideFile));
                 csvData = generateCarGuideCSV(processedData);
                 filename = 'car_fitment_guides.csv';
+            } else if (converterType === 'colorgallery') {
+                // Color gallery converter
+                processedData = await Promise.all(files.map(processColorGalleryFile));
+                csvData = generateColorGalleryCSV(processedData);
+                filename = 'vehicle_colors.csv';
             }
             
             // Create download link
@@ -226,6 +231,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     const content = e.target.result;
                     const parsed = parseCarGuideMarkdown(content);
+                    resolve(parsed);
+                } catch (error) {
+                    reject(error);
+                }
+            };
+            
+            reader.onerror = function() {
+                reject(new Error(`Error reading file ${file.name}`));
+            };
+            
+            reader.readAsText(file);
+        });
+    }
+    
+    async function processColorGalleryFile(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                try {
+                    const content = e.target.result;
+                    const parsed = parseColorGalleryMarkdown(content, file.name);
                     resolve(parsed);
                 } catch (error) {
                     reject(error);
@@ -852,6 +879,165 @@ document.addEventListener('DOMContentLoaded', () => {
             
             return recommendations;
         }
+    }
+    
+    function parseColorGalleryMarkdown(content, filename) {
+        // Extract the vehicle information from the filename (if available)
+        const filenameParts = filename.replace('.md', '').split('_');
+        const vehicleInfo = {
+            filename: filename,
+            year: filenameParts[0] || '',
+            make: filenameParts[1] || '',
+            model: filenameParts[2] || '',
+            colors: []
+        };
+
+        // Extract colors from markdown links (exclude image links)
+        const colorLinkRegex = /- \[\s*([^[\]]+?)\s*\]\(/g;
+        let colorMatch;
+        const uniqueColors = new Set();
+        const colorUrlMap = new Map();
+        
+        while ((colorMatch = colorLinkRegex.exec(content)) !== null) {
+            // Extract the color name from the link text
+            const colorName = colorMatch[1].trim();
+            
+            // Get link URL (helps with extracting color codes)
+            const linkStartIndex = content.indexOf('](', colorMatch.index) + 2;
+            const linkEndIndex = content.indexOf(')', linkStartIndex);
+            const linkUrl = content.substring(linkStartIndex, linkEndIndex);
+            
+            // Extract color code from URL if it exists
+            const colorCodeMatch = linkUrl.match(/changeColor=([^&]+)/);
+            if (colorCodeMatch) {
+                colorUrlMap.set(colorName, colorCodeMatch[1]);
+            }
+            
+            uniqueColors.add(colorName);
+        }
+        
+        // Find the base image URL at the bottom of the markdown
+        const imageRegex = /!\[.*\]\((https:\/\/[^)]+)\)/;
+        const imageMatch = content.match(imageRegex);
+        let baseImageUrl = '';
+        
+        if (imageMatch && imageMatch[1]) {
+            baseImageUrl = imageMatch[1];
+            
+            // Extract vehicle info from image URL and/or alt text if available
+            const altTextRegex = /!\[(Vehicle in Wheel Visualizer - ([^[\]]+))\]/;
+            const altTextMatch = content.match(altTextRegex);
+            
+            if (altTextMatch && altTextMatch[2]) {
+                const vehicleDescription = altTextMatch[2].trim();
+                // Try to parse year, make, model from the description
+                const yearMakeModelRegex = /(\d{4})\s+(\w+)\s+(.*?)(?:\s+(\w+\s+\w+))?$/;
+                const ymMatch = vehicleDescription.match(yearMakeModelRegex);
+                
+                if (ymMatch) {
+                    vehicleInfo.year = ymMatch[1] || vehicleInfo.year;
+                    vehicleInfo.make = ymMatch[2] || vehicleInfo.make;
+                    vehicleInfo.model = ymMatch[3] || vehicleInfo.model;
+                }
+            }
+        }
+        
+        // Generate color data with image URLs
+        if (baseImageUrl) {
+            // Extract parts of the URL: domain, path to image, image filename, query string
+            const urlParts = baseImageUrl.match(/(https:\/\/[^\/]+\/[^\/]+\/[^\/]+\/[^\/]+\/[^\/]+\/)([^\/]+\/[^?]+)(\?.*)?/);
+            
+            if (urlParts) {
+                const [, domainAndPath, filenameWithColor, queryString] = urlParts;
+                
+                // Extract model information and color from the filename
+                const filenameMatch = filenameWithColor.match(/([^\/]+\/)(\d+veh\.)(\w+\.\d+\.)(\w+_\w+)(\.png)/);
+                
+                if (filenameMatch) {
+                    const [, directory, prefix, modelWithZero, currentColor, suffix] = filenameMatch;
+                    
+                    // Remove the "0" from the model section for all colors except current
+                    const modelWithoutZero = modelWithZero.replace(/^0/, '');
+                    
+                    // For each unique color, generate a URL with that color
+                    uniqueColors.forEach(color => {
+                        // Try to get the color code from URL
+                        let colorForUrl = colorUrlMap.get(color);
+                        
+                        // If not found in URL, convert color name to format in URL (e.g., "Tango Red" to "Tango_Red")
+                        if (!colorForUrl) {
+                            colorForUrl = color.replace(/ /g, '_');
+                        }
+                        
+                        // Create a new URL
+                        let newImageUrl;
+                        
+                        // Keep the base URL for the current color, modify model section for others
+                        if (colorForUrl === currentColor) {
+                            // This is the base URL color, keep it as is
+                            newImageUrl = baseImageUrl;
+                        } else {
+                            // For other colors, construct a new URL with model section without "0"
+                            newImageUrl = `${domainAndPath}${directory}${prefix}${modelWithoutZero}${colorForUrl}${suffix}${queryString || ''}`;
+                        }
+                        
+                        vehicleInfo.colors.push({
+                            colorName: color,
+                            imageUrl: newImageUrl
+                        });
+                    });
+                }
+            }
+        }
+        
+        return vehicleInfo;
+    }
+    
+    function generateColorGalleryCSV(data) {
+        // Flatten all color entries from all files
+        const allEntries = [];
+        
+        data.forEach(vehicleInfo => {
+            // Create a unique set to track colors we've already added
+            const addedColors = new Set();
+            
+            vehicleInfo.colors.forEach(color => {
+                // Skip duplicate colors
+                if (!addedColors.has(color.colorName)) {
+                    addedColors.add(color.colorName);
+                    
+                    allEntries.push({
+                        year: vehicleInfo.year,
+                        make: vehicleInfo.make,
+                        model: vehicleInfo.model,
+                        colorName: color.colorName,
+                        imageUrl: color.imageUrl,
+                        filename: vehicleInfo.filename
+                    });
+                }
+            });
+        });
+        
+        // Generate CSV header
+        const header = ['Year', 'Make', 'Model', 'Color Name', 'Image URL', 'Source File'];
+        
+        // Generate CSV rows
+        const rows = allEntries.map(entry => [
+            entry.year,
+            entry.make,
+            entry.model,
+            entry.colorName,
+            entry.imageUrl,
+            entry.filename
+        ]);
+        
+        // Combine header and rows
+        const csvContent = [header]
+            .concat(rows)
+            .map(row => row.map(escapeCsvField).join(','))
+            .join('\n');
+        
+        return csvContent;
     }
     
     function generateProductCSV(data) {
