@@ -95,19 +95,23 @@ function parseColorGalleryMarkdown(content, filename) {
                     
                     // Create a new URL
                     let newImageUrl;
+                    let imageFilename;
                     
                     // Keep the base URL for the current color, modify model section for others
                     if (colorForUrl === currentColor) {
                         // This is the base URL color, keep it as is
                         newImageUrl = baseImageUrl;
+                        imageFilename = `${prefix}${modelWithZero}${colorForUrl}${suffix}`;
                     } else {
                         // For other colors, construct a new URL with model section without "0"
                         newImageUrl = `${domainAndPath}${directory}${prefix}${modelWithoutZero}${colorForUrl}${suffix}${queryString || ''}`;
+                        imageFilename = `${prefix}${modelWithoutZero}${colorForUrl}${suffix}`;
                     }
                     
                     vehicleInfo.colors.push({
                         colorName: color,
-                        imageUrl: newImageUrl
+                        imageUrl: newImageUrl,
+                        imageFilename: imageFilename
                     });
                 });
             }
@@ -136,6 +140,7 @@ function generateColorGalleryCSV(data) {
                     model: vehicleInfo.model,
                     colorName: color.colorName,
                     imageUrl: color.imageUrl,
+                    imageFilename: color.imageFilename,
                     filename: vehicleInfo.filename
                 });
             }
@@ -143,7 +148,7 @@ function generateColorGalleryCSV(data) {
     });
     
     // Generate CSV header
-    const header = ['Year', 'Make', 'Model', 'Color Name', 'Image URL', 'Source File'];
+    const header = ['Year', 'Make', 'Model', 'Color Name', 'Image URL', 'Image Filename', 'Source File'];
     
     // Generate CSV rows
     const rows = allEntries.map(entry => [
@@ -152,6 +157,7 @@ function generateColorGalleryCSV(data) {
         entry.model,
         entry.colorName,
         entry.imageUrl,
+        entry.imageFilename,
         entry.filename
     ]);
     
