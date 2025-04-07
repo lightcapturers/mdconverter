@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 // Load the sample file
-const sampleFile = fs.readFileSync(path.join(__dirname, 'Data', 'vehiclecolors.md'), 'utf8');
+const sampleFile = fs.readFileSync(path.join(__dirname, 'Data', 'www_tirerack_co1.md'), 'utf8');
 
 // Parse the markdown content
 function parseColorGalleryMarkdown(content, filename) {
@@ -16,7 +16,7 @@ function parseColorGalleryMarkdown(content, filename) {
         colors: []
     };
 
-    // Extract colors from markdown links
+    // Extract colors from markdown links (exclude image links)
     const colorLinkRegex = /- \[\s*([^[\]]+?)\s*\]\(/g;
     let colorMatch;
     const uniqueColors = new Set();
@@ -185,7 +185,7 @@ function escapeCsvField(field) {
 }
 
 // Test the parser
-const parsedData = parseColorGalleryMarkdown(sampleFile, 'vehiclecolors.md');
+const parsedData = parseColorGalleryMarkdown(sampleFile, 'www_tirerack_co1.md');
 console.log('Parsed data:');
 console.log(JSON.stringify(parsedData, null, 2));
 
@@ -195,5 +195,5 @@ console.log('\nGenerated CSV:');
 console.log(csvData);
 
 // Write the CSV to a file
-fs.writeFileSync(path.join(__dirname, 'Output', 'vehicle_colors.csv'), csvData);
-console.log('\nCSV file written to Output/vehicle_colors.csv'); 
+fs.writeFileSync(path.join(__dirname, 'Output', 'bmw_colors.csv'), csvData);
+console.log('\nCSV file written to Output/bmw_colors.csv'); 

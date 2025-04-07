@@ -951,7 +951,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const [, domainAndPath, filenameWithColor, queryString] = urlParts;
                 
                 // Extract model information and color from the filename
-                const filenameMatch = filenameWithColor.match(/([^\/]+\/)(\d+veh\.)(\w+\.\d+\.)(\w+_\w+)(\.png)/);
+                const filenameMatch = filenameWithColor.match(/([^\/]+\/)(\d+veh\.)(\w+\.\d+(?:\.\d+)?\.)(\w+(?:_\w+)*)(\.png)/);
                 
                 if (filenameMatch) {
                     const [, directory, prefix, modelWithZero, currentColor, suffix] = filenameMatch;
