@@ -146,6 +146,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 processedData = await Promise.all(files.map(processWheelProductFile));
                 csvData = generateWheelProductCSV(processedData);
                 filename = 'wheel_products.csv';
+            } else if (converterType === 'wheelspec') {
+                // Wheel specs converter
+                processedData = await Promise.all(files.map(processWheelSpecFile));
+                csvData = generateWheelSpecCSV(processedData);
+                filename = 'wheel_specs.csv';
             }
             
             // Create download link
@@ -280,6 +285,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     const content = e.target.result;
                     const parsed = parseWheelProductMarkdown(content, file.name);
+                    resolve(parsed);
+                } catch (error) {
+                    reject(error);
+                }
+            };
+            
+            reader.onerror = function() {
+                reject(new Error(`Error reading file ${file.name}`));
+            };
+            
+            reader.readAsText(file);
+        });
+    }
+    
+    async function processWheelSpecFile(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                try {
+                    const content = e.target.result;
+                    const parsed = parseWheelSpecMarkdown(content, file.name);
                     resolve(parsed);
                 } catch (error) {
                     reject(error);
@@ -1426,6 +1453,218 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         
         return result;
+    }
+    
+    function parseWheelSpecMarkdown(content, filename) {
+        // Initialize result array
+        const results = [];
+        
+        // Extract brand name
+        let brand = '';
+        // Look for a large header usually containing the brand name
+        const brandHeaderMatch = content.match(/## \[([A-Za-z0-9-]+)\]/);
+        if (brandHeaderMatch) {
+            brand = brandHeaderMatch[1].trim();
+        } else {
+            const headerMatch = content.match(/# ([A-Za-z0-9-]+)/);
+            if (headerMatch) {
+                brand = headerMatch[1].trim();
+            } else if (filename) {
+                // Try to extract from filename
+                const parts = filename.split('_');
+                if (parts.length > 0) {
+                    brand = parts[0].replace(/\.md$/, '').trim();
+                }
+            }
+        }
+        
+        // Extract wheel model
+        let wheelModel = '';
+        // First check for BBS Japan style format with model in a separate section
+        const modelMatchBBS = content.match(/## ([A-Za-z0-9-]+)/);
+        if (modelMatchBBS) {
+            wheelModel = modelMatchBBS[1].trim();
+        }
+        // Check fifteen52 format with escaped pipe in title
+        else if (!wheelModel) {
+            const modelMatchFifteen52 = content.match(/# ([A-Za-z0-9-]+) \\_ ([A-Za-z0-9-]+)/);
+            if (modelMatchFifteen52) {
+                wheelModel = modelMatchFifteen52[1].trim();
+            } else {
+                const modelMatch = content.match(/# ([A-Za-z0-9-]+)\s*$/m);
+                if (modelMatch) {
+                    wheelModel = modelMatch[1].trim();
+                } else {
+                    // Try alternate format
+                    const altModelMatch = content.match(/^# ([A-Za-z0-9-]+)/m);
+                    if (altModelMatch) {
+                        wheelModel = altModelMatch[1].trim();
+                    }
+                }
+            }
+        }
+        
+        // Check for fifteen52 style format (Size \| Bolt Pattern \| Offset)
+        // This format doesn't use markdown tables but separates data with escaped pipes
+        const fifteenStyleLines = content.match(/[0-9.]+x[0-9.]+ \\[|] [0-9]+x[0-9.]+ .*? \\[|] ET[0-9]+/g);
+        if (fifteenStyleLines) {
+            // Process fifteen52 style format
+            const finishMatch = content.match(/# [A-Za-z0-9-]+ \\_ ([A-Za-z0-9-]+)/);
+            const finish = finishMatch ? finishMatch[1] : '';
+            
+            fifteenStyleLines.forEach(line => {
+                // Parse line like "17x8.5 \| 5x127 / 5x5 \| ET0"
+                const parts = line.split('\\|').map(part => part.trim());
+                if (parts.length >= 3) {
+                    const size = parts[0];
+                    
+                    // Extract pattern - might have both metric and imperial formats
+                    const pattern = parts[1];
+                    
+                    // Extract offset - convert from ET format to + format
+                    const offsetMatch = parts[2].match(/ET([0-9]+)/);
+                    const inset = offsetMatch ? `+${offsetMatch[1]}` : parts[2];
+                    
+                    results.push({
+                        brand,
+                        wheelModel,
+                        partNo: '',
+                        finish,
+                        size,
+                        inset,
+                        pattern
+                    });
+                }
+            });
+        }
+        
+        // Find tables in the markdown - look for markdown table format with | characters
+        const tableSection = content.match(/\|[^|]+\|[^|]+\|[^|]+\|[^|]+\|[\s\S]*?(?=\n\n|\n#|$)/g);
+        
+        if (tableSection) {
+            tableSection.forEach(table => {
+                // Extract header row to identify columns
+                const headerRow = table.split('\n')[0];
+                const headerCells = headerRow.split('|').map(cell => cell.trim().toLowerCase());
+                
+                // Find indices of our target columns
+                const partNoIndex = headerCells.findIndex(cell => 
+                    cell.includes('part') || 
+                    cell.includes('no') || 
+                    cell === 'type'  // BBS Japan uses TYPE for part numbers
+                );
+                const finishIndex = headerCells.findIndex(cell => cell.includes('finish'));
+                const sizeIndexes = headerCells.reduce((indexes, cell, i) => {
+                    if (cell.includes('size') || 
+                        cell.includes('diameter') || 
+                        cell.includes('width')) {
+                        indexes.push(i);
+                    }
+                    return indexes;
+                }, []);
+                const insetIndex = headerCells.findIndex(cell => 
+                    cell.includes('inset') || 
+                    cell.includes('offset')
+                );
+                const patternIndex = headerCells.findIndex(cell => 
+                    cell.includes('pattern') || 
+                    cell.includes('bolt') || 
+                    cell.includes('pcd') || 
+                    cell.includes('h/p.c.d')  // BBS Japan format
+                );
+                
+                // Skip header and separator rows
+                const dataRows = table.split('\n').slice(2);
+                
+                dataRows.forEach(row => {
+                    if (row.trim() === '' || !row.includes('|')) return;
+                    
+                    const cells = row.split('|').map(cell => cell.trim());
+                    
+                    // Skip if cells don't have enough data
+                    if (cells.length < 3) return;
+                    
+                    // Extract data for each column
+                    const partNo = partNoIndex > 0 && cells[partNoIndex] ? cells[partNoIndex] : '';
+                    const finish = finishIndex > 0 && cells[finishIndex] ? cells[finishIndex] : '';
+                    
+                    let size = '';
+                    // Check if size is in a single column or split across diameter/width
+                    if (sizeIndexes.length > 0) {
+                        if (sizeIndexes.length === 1) {
+                            // Single size column (e.g. "17x8")
+                            size = cells[sizeIndexes[0]];
+                        } else if (sizeIndexes.length >= 2) {
+                            // Diameter and width in separate columns
+                            const diameter = cells[sizeIndexes[0]];
+                            const width = cells[sizeIndexes[1]];
+                            if (diameter && width) {
+                                size = `${diameter}x${width}`;
+                            }
+                        }
+                    }
+                    
+                    const inset = insetIndex > 0 && cells[insetIndex] ? cells[insetIndex] : '';
+                    
+                    // Process pattern - handle BBS style with slash instead of 'x'
+                    let pattern = '';
+                    if (patternIndex > 0 && cells[patternIndex]) {
+                        pattern = cells[patternIndex];
+                        // Convert from "5/112.0" format to "5x112.0" format
+                        pattern = pattern.replace(/(\d+)\/(\d+\.?\d*)/, '$1x$2');
+                    }
+                    
+                    // Only add if we have at least size and some other important data
+                    if (size && (inset || pattern)) {
+                        results.push({
+                            brand,
+                            wheelModel,
+                            partNo,
+                            finish,
+                            size,
+                            inset,
+                            pattern
+                        });
+                    }
+                });
+            });
+        }
+        
+        return results;
+    }
+    
+    function generateWheelSpecCSV(data) {
+        // Flatten the data
+        const flatData = [];
+        
+        data.forEach(fileData => {
+            fileData.forEach(wheelSpec => {
+                flatData.push(wheelSpec);
+            });
+        });
+        
+        // Generate CSV header
+        const headers = ['Brand', 'Wheel Model', 'Size', 'Inset/Offset', 'Pattern/Bolt Pattern/PCD', 'Part Number', 'Finish'];
+        
+        // Create CSV content
+        let csvContent = headers.join(',') + '\n';
+        
+        // Add data rows
+        flatData.forEach(item => {
+            const row = [
+                escapeCsvField(item.brand),
+                escapeCsvField(item.wheelModel),
+                escapeCsvField(item.size),
+                escapeCsvField(item.inset),
+                escapeCsvField(item.pattern),
+                escapeCsvField(item.partNo),
+                escapeCsvField(item.finish)
+            ];
+            
+            csvContent += row.join(',') + '\n';
+        });
+        
+        return csvContent;
     }
     
     function escapeCsvField(field) {
