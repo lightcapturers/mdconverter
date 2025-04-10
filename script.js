@@ -1480,25 +1480,32 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Extract wheel model
         let wheelModel = '';
-        // First check for BBS Japan style format with model in a separate section
-        const modelMatchBBS = content.match(/## ([A-Za-z0-9-]+)/);
-        if (modelMatchBBS) {
-            wheelModel = modelMatchBBS[1].trim();
+        // First look for "Product Name" followed by model on next line (RAYS format)
+        const raysModelMatch = content.match(/Product Name\s*\n\s*\n([A-Za-z0-9-]+)/);
+        if (raysModelMatch) {
+            wheelModel = raysModelMatch[1].trim();
         }
-        // Check fifteen52 format with escaped pipe in title
+        // Check for BBS Japan style format with model in a separate section
         else if (!wheelModel) {
-            const modelMatchFifteen52 = content.match(/# ([A-Za-z0-9-]+) \\_ ([A-Za-z0-9-]+)/);
-            if (modelMatchFifteen52) {
-                wheelModel = modelMatchFifteen52[1].trim();
-            } else {
-                const modelMatch = content.match(/# ([A-Za-z0-9-]+)\s*$/m);
-                if (modelMatch) {
-                    wheelModel = modelMatch[1].trim();
+            const modelMatchBBS = content.match(/## ([A-Za-z0-9-]+)/);
+            if (modelMatchBBS) {
+                wheelModel = modelMatchBBS[1].trim();
+            }
+            // Check fifteen52 format with escaped pipe in title
+            else {
+                const modelMatchFifteen52 = content.match(/# ([A-Za-z0-9-]+) \\_ ([A-Za-z0-9-]+)/);
+                if (modelMatchFifteen52) {
+                    wheelModel = modelMatchFifteen52[1].trim();
                 } else {
-                    // Try alternate format
-                    const altModelMatch = content.match(/^# ([A-Za-z0-9-]+)/m);
-                    if (altModelMatch) {
-                        wheelModel = altModelMatch[1].trim();
+                    const modelMatch = content.match(/# ([A-Za-z0-9-]+)\s*$/m);
+                    if (modelMatch) {
+                        wheelModel = modelMatch[1].trim();
+                    } else {
+                        // Try alternate format
+                        const altModelMatch = content.match(/^# ([A-Za-z0-9-]+)/m);
+                        if (altModelMatch) {
+                            wheelModel = altModelMatch[1].trim();
+                        }
                     }
                 }
             }
@@ -1551,13 +1558,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 const partNoIndex = headerCells.findIndex(cell => 
                     cell.includes('part') || 
                     cell.includes('no') || 
-                    cell === 'type'  // BBS Japan uses TYPE for part numbers
+                    cell === 'type' ||  // BBS Japan uses TYPE for part numbers
+                    cell === 'code'     // RAYS uses CODE for part numbers
                 );
-                const finishIndex = headerCells.findIndex(cell => cell.includes('finish'));
+                const finishIndex = headerCells.findIndex(cell => 
+                    cell.includes('finish') ||
+                    cell.includes('color')   // RAYS uses COLOR for finishes
+                );
                 const sizeIndexes = headerCells.reduce((indexes, cell, i) => {
                     if (cell.includes('size') || 
                         cell.includes('diameter') || 
-                        cell.includes('width')) {
+                        cell.includes('width') ||
+                        cell === 'rim') {     // Some use RIM for size
                         indexes.push(i);
                     }
                     return indexes;
@@ -1566,10 +1578,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     cell.includes('inset') || 
                     cell.includes('offset')
                 );
+                
+                // Check for separate HOLE and P.C.D. columns (RAYS format)
+                const holeIndex = headerCells.findIndex(cell => 
+                    cell === 'hole' || 
+                    cell.includes('holes')
+                );
+                const pcdIndex = headerCells.findIndex(cell => 
+                    cell === 'p.c.d.' || 
+                    cell.includes('pcd')
+                );
+                
+                // Traditional single pattern column
                 const patternIndex = headerCells.findIndex(cell => 
                     cell.includes('pattern') || 
                     cell.includes('bolt') || 
-                    cell.includes('pcd') || 
                     cell.includes('h/p.c.d')  // BBS Japan format
                 );
                 
@@ -1594,23 +1617,35 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (sizeIndexes.length === 1) {
                             // Single size column (e.g. "17x8")
                             size = cells[sizeIndexes[0]];
+                            // Remove any 'J' suffix from size (RAYS format)
+                            size = size.replace(/J$/i, '');
                         } else if (sizeIndexes.length >= 2) {
                             // Diameter and width in separate columns
                             const diameter = cells[sizeIndexes[0]];
                             const width = cells[sizeIndexes[1]];
                             if (diameter && width) {
                                 size = `${diameter}x${width}`;
+                                // Remove any 'J' suffix
+                                size = size.replace(/J$/i, '');
                             }
                         }
                     }
                     
                     const inset = insetIndex > 0 && cells[insetIndex] ? cells[insetIndex] : '';
                     
-                    // Process pattern - handle BBS style with slash instead of 'x'
+                    // Process pattern - handle different formats
                     let pattern = '';
-                    if (patternIndex > 0 && cells[patternIndex]) {
+                    
+                    // Case 1: Split HOLE and P.C.D columns (RAYS format)
+                    if (holeIndex > 0 && pcdIndex > 0 && cells[holeIndex] && cells[pcdIndex]) {
+                        const holes = cells[holeIndex];
+                        const pcd = cells[pcdIndex];
+                        pattern = `${holes}x${pcd}`;
+                    }
+                    // Case 2: Single pattern column
+                    else if (patternIndex > 0 && cells[patternIndex]) {
                         pattern = cells[patternIndex];
-                        // Convert from "5/112.0" format to "5x112.0" format
+                        // Convert from "5/112.0" format to "5x112.0" format (BBS Japan format)
                         pattern = pattern.replace(/(\d+)\/(\d+\.?\d*)/, '$1x$2');
                     }
                     
