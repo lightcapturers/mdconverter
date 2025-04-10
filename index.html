@@ -5,33 +5,257 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Markdown to CSV Converter</title>
     <link rel="stylesheet" href="styles.css">
+    <style>
+        :root {
+            --primary-color: #4a6bff;
+            --primary-hover: #3a5aee;
+            --light-gray: #f5f7fa;
+            --border-color: #e0e4e8;
+            --text-color: #333;
+            --shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            line-height: 1.6;
+            color: var(--text-color);
+            background-color: #f9fafc;
+            margin: 0;
+            padding: 0;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 40px auto;
+            padding: 32px;
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 32px;
+            color: #2d3748;
+            font-weight: 600;
+        }
+        
+        h3 {
+            font-size: 18px;
+            margin-bottom: 16px;
+            color: #2d3748;
+        }
+        
+        .converter-options {
+            margin-bottom: 32px;
+            background-color: var(--light-gray);
+            border-radius: 8px;
+            padding: 24px;
+        }
+        
+        .options-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: #4a5568;
+        }
+        
+        .converter-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 16px;
+        }
+        
+        .converter-option {
+            padding: 12px;
+            background-color: white;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            transition: all 0.2s;
+        }
+        
+        .converter-option:hover {
+            border-color: var(--primary-color);
+            box-shadow: 0 2px 5px rgba(74, 107, 255, 0.1);
+        }
+        
+        .converter-option label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+        }
+        
+        .converter-option input[type="radio"] {
+            margin-right: 10px;
+        }
+        
+        .upload-container {
+            border: 2px dashed var(--border-color);
+            border-radius: 8px;
+            padding: 40px 20px;
+            text-align: center;
+            margin-bottom: 32px;
+            background-color: var(--light-gray);
+            transition: all 0.2s;
+        }
+        
+        .upload-container.dragover {
+            border-color: var(--primary-color);
+            background-color: rgba(74, 107, 255, 0.05);
+        }
+        
+        .upload-label p {
+            margin: 8px 0;
+            color: #718096;
+        }
+        
+        .upload-button {
+            display: inline-block;
+            background-color: var(--primary-color);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-top: 16px;
+            font-weight: 500;
+            transition: background-color 0.2s;
+        }
+        
+        .upload-button:hover {
+            background-color: var(--primary-hover);
+        }
+        
+        .file-list {
+            background-color: var(--light-gray);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 32px;
+        }
+        
+        #selectedFiles {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        
+        #selectedFiles li {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 12px;
+            margin-bottom: 8px;
+            background-color: white;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .remove-file {
+            color: #e53e3e;
+            cursor: pointer;
+            font-weight: bold;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: all 0.2s;
+        }
+        
+        .remove-file:hover {
+            background-color: #fff5f5;
+        }
+        
+        .convert-button {
+            display: block;
+            width: 100%;
+            padding: 14px;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            margin-bottom: 32px;
+        }
+        
+        .convert-button:disabled {
+            background-color: #cbd5e0;
+            cursor: not-allowed;
+        }
+        
+        .convert-button:not(:disabled):hover {
+            background-color: var(--primary-hover);
+        }
+        
+        .result-container {
+            background-color: var(--light-gray);
+            border-radius: 8px;
+            padding: 24px;
+            text-align: center;
+        }
+        
+        .download-button {
+            display: inline-block;
+            background-color: #38a169;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: 500;
+            transition: background-color 0.2s;
+        }
+        
+        .download-button:hover {
+            background-color: #2f855a;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
         <h1>Markdown to CSV Converter</h1>
         
-        <div class="converter-toggle">
-            <label>
-                <input type="radio" name="converterType" value="product" checked> Product Converter
-            </label>
-            <label>
-                <input type="radio" name="converterType" value="gallery"> Gallery Converter
-            </label>
-            <label>
-                <input type="radio" name="converterType" value="boltpattern"> Bolt Pattern Converter
-            </label>
-            <label>
-                <input type="radio" name="converterType" value="carguide"> Car Guide Converter
-            </label>
-            <label>
-                <input type="radio" name="converterType" value="colorgallery"> Tire Rack URL Converter
-            </label>
-            <label>
-                <input type="radio" name="converterType" value="wheelproduct"> Wheel Product Converter
-            </label>
-            <label>
-                <input type="radio" name="converterType" value="wheelspec"> Wheel Spec Converter
-            </label>
+        <div class="converter-options">
+            <div class="options-title">Choose a converter type:</div>
+            <div class="converter-grid">
+                <div class="converter-option">
+                    <label>
+                        <input type="radio" name="converterType" value="product" checked> Product Converter
+                    </label>
+                </div>
+                <div class="converter-option">
+                    <label>
+                        <input type="radio" name="converterType" value="gallery"> Gallery Converter
+                    </label>
+                </div>
+                <div class="converter-option">
+                    <label>
+                        <input type="radio" name="converterType" value="boltpattern"> Bolt Pattern Converter
+                    </label>
+                </div>
+                <div class="converter-option">
+                    <label>
+                        <input type="radio" name="converterType" value="carguide"> Car Guide Converter
+                    </label>
+                </div>
+                <div class="converter-option">
+                    <label>
+                        <input type="radio" name="converterType" value="colorgallery"> Tire Rack URL Converter
+                    </label>
+                </div>
+                <div class="converter-option">
+                    <label>
+                        <input type="radio" name="converterType" value="wheelproduct"> Wheel Product Converter
+                    </label>
+                </div>
+                <div class="converter-option">
+                    <label>
+                        <input type="radio" name="converterType" value="wheelspec"> Wheel Spec Converter
+                    </label>
+                </div>
+            </div>
         </div>
         
         <div class="upload-container" id="dropZone">
@@ -42,11 +266,14 @@
                 <input type="file" id="fileInput" multiple accept=".md" style="display: none;">
             </div>
         </div>
+        
         <div class="file-list" id="fileList">
             <h3>Selected Files</h3>
             <ul id="selectedFiles"></ul>
         </div>
+        
         <button id="convertButton" class="convert-button" disabled>Convert to CSV</button>
+        
         <div id="resultContainer" class="result-container" style="display: none;">
             <h3>Conversion Result</h3>
             <a id="downloadLink" class="download-button">Download CSV</a>
