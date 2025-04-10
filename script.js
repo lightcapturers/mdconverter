@@ -943,6 +943,7 @@ document.addEventListener('DOMContentLoaded', () => {
             year: filenameParts[0] || '',
             make: filenameParts[1] || '',
             model: filenameParts[2] || '',
+            wheelSize: '',  // Add new field for wheel size
             colors: []
         };
 
@@ -977,6 +978,18 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (imageMatch && imageMatch[1]) {
             baseImageUrl = imageMatch[1];
+            
+            // Extract wheel size from the fw parameter in the URL
+            const wheelSizeMatch = baseImageUrl.match(/fw=\/[^\/]+\/[^\.]+\.[^\.]+\.(\d+)/);
+            if (wheelSizeMatch && wheelSizeMatch[1]) {
+                vehicleInfo.wheelSize = wheelSizeMatch[1];
+            } else {
+                // Try alternate format: fw=/Brand/Model.R.19
+                const altWheelSizeMatch = baseImageUrl.match(/fw=\/[^\/]+\/[^\.]+\.R\.(\d+)/);
+                if (altWheelSizeMatch && altWheelSizeMatch[1]) {
+                    vehicleInfo.wheelSize = altWheelSizeMatch[1];
+                }
+            }
             
             // Extract vehicle info from image URL and/or alt text if available
             const altTextRegex = /!\[(Vehicle in Wheel Visualizer - ([^[\]]+))\]/;
@@ -1068,6 +1081,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         year: vehicleInfo.year,
                         make: vehicleInfo.make,
                         model: vehicleInfo.model,
+                        wheelSize: vehicleInfo.wheelSize,  // Add the wheel size to entries
                         colorName: color.colorName,
                         imageUrl: color.imageUrl,
                         imageFilename: color.imageFilename,
@@ -1078,13 +1092,14 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         
         // Generate CSV header
-        const header = ['Year', 'Make', 'Model', 'Color Name', 'Image URL', 'Image Filename', 'Source File'];
+        const header = ['Year', 'Make', 'Model', 'Wheel Size', 'Color Name', 'Image URL', 'Image Filename', 'Source File'];
         
         // Generate CSV rows
         const rows = allEntries.map(entry => [
             entry.year,
             entry.make,
             entry.model,
+            entry.wheelSize,  // Include wheel size in rows
             entry.colorName,
             entry.imageUrl,
             entry.imageFilename,
